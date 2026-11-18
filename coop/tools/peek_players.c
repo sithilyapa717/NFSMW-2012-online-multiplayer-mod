@@ -1,6 +1,6 @@
 /*
  * peek_players: READ-ONLY look at the running game's PlayerManager (Phase 2 check).
- * Never writes to the game.
+ * Only the `nudge` command writes to the game (one float, once).
  *
  *   peek_players.exe          one snapshot: every active player slot (type 0 local, 1 network, 2 AI),
  *                             car handle, and what we think is the car's position/velocity
@@ -102,6 +102,31 @@ static void deep(void)
     floats("record (data+0x3000+h*0x1c40)", data + 0x3000 + h * 0x1c40, 0x1c40);
 }
 
+/* WRITES to the game: adds dx (default +15 m) to the local car's x position at entry+0x110, once.
+ * Experiment to see whether writing that field moves the car. Needs PROCESS_VM_WRITE. */
+static int nudge(void)
+{
+    uint32_t G = 0, PM = 0, p = 0, h = 0;
+    rd32(0x01177868, &G); rd32(G + 0x2F3DC, &PM); rd32(PM + 0xA5D0, &p); rd32(p + 0xA0, &h);
+    uint32_t veh = vehicle_entry(h, 0, 0, 0);
+    float pos[4];
+    if (!veh || !rd(veh + 0x110, pos, 16)) { printf("cannot read car
+"); return 1; }
+    printf("before: (%.2f, %.2f, %.2f)
+", pos[0], pos[1], pos[2]);
+    pos[0] += 15.0f;
+    SIZE_T w = 0;
+    if (!WriteProcessMemory(g_h, (LPVOID)(uintptr_t)(veh + 0x110), pos, 16, &w) || w != 16) {
+        printf("write failed (error %lu)
+", GetLastError());
+        return 1;
+    }
+    rd(veh + 0x110, pos, 16);
+    printf("after:  (%.2f, %.2f, %.2f)  (look at the game: did the car jump or snap back?)
+", pos[0], pos[1], pos[2]);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     int dodeep = argc > 1 && strcmp(argv[1], "deep") == 0;
@@ -116,9 +141,10 @@ int main(int argc, char **argv)
         } while (Process32Next(s, &pe));
     if (s != INVALID_HANDLE_VALUE) CloseHandle(s);
     if (!pid) { fprintf(stderr, "NFS13.exe is not running\n"); return 2; }
-    g_h = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
+    g_h = OpenProcess(PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (!g_h) { fprintf(stderr, "cannot open process (error %lu); try an Administrator terminal\n", GetLastError()); return 3; }
     if (dodeep) { deep(); return 0; }
+    if (argc > 1 && strcmp(argv[1], "nudge") == 0) return nudge();
     do {
         snapshot();
         if (every) { printf("\n"); Sleep(every); }
