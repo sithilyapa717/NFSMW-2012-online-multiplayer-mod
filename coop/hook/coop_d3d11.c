@@ -85,8 +85,10 @@ static int request_teleport(uint32_t handle, const float pos[4], const char *why
 {
     uint32_t mgr = 0;
     float dir[4];
-    if (!rd32(ADDR_TELEPORT_MGR, &mgr) || !mgr || !rd(ADDR_DEFAULT_DIR, dir, 16)) {
-        logf_("teleport (%s): manager not available\n", why);
+    int r1 = rd32(ADDR_TELEPORT_MGR, &mgr);
+    int r2 = rd(ADDR_DEFAULT_DIR, dir, 16);
+    if (!r1 || !mgr || !r2) {
+        logf_("teleport (%s): manager not available (read mgr=%d value=%08x, read dir=%d)\n", why, r1, mgr, r2);
         return 0;
     }
     float p[4] = {pos[0], pos[1], pos[2], pos[3]};
@@ -105,6 +107,11 @@ static void dump_players(void)
     rd32(pm + 0xA694, &racers);
     rd32(pm + 0xA660, &cops);
     rd32(pm + 0xA6B4, &local);
+    {
+        uint32_t tm = 0, vm = 0;
+        int a = rd32(ADDR_TELEPORT_MGR, &tm), b = rd32(ADDR_VEH_MGR, &vm);
+        logf_("globals: *0x01177870=%08x(ok=%d) *0x010EDAE4=%08x(ok=%d)\n", tm, a, vm, b);
+    }
     logf_("players: PM=%08x racers=%u cops=%u localIdx=%d\n", pm, racers, cops, (int)local);
     for (int i = 0; i < 24; i++) {
         uint32_t p = 0, type = 0, h = 0;
