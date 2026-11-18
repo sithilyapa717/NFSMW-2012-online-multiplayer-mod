@@ -1,0 +1,14 @@
+# build output
+coop/build/
+*.exe
+*.dll
+*.pdb
+*.lib
+*.obj
+*.o
+
+# someone else's repository (sn0wd0wn/nfs13), kept as a local reference clone only
+nfs13/
+
+# private working notes
+COOP_MOD_HANDOFF.md
