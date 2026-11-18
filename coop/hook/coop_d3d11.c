@@ -87,7 +87,8 @@ static int request_teleport(uint32_t handle, const float pos[4], const char *why
     float dir[4];
     int r1 = rd32(ADDR_TELEPORT_MGR, &mgr);
     int r2 = rd(ADDR_DEFAULT_DIR, dir, 16);
-    if (!r1 || !mgr || !r2) {
+    if (r1 && mgr) mgr += 0x25690u; /* the game does ADD ECX,0x25690 before calling FUN_00647E00 */
+    if (!r1 || mgr == 0x25690u || !mgr || !r2) {
         logf_("teleport (%s): manager not available (read mgr=%d value=%08x, read dir=%d)\n", why, r1, mgr, r2);
         return 0;
     }
