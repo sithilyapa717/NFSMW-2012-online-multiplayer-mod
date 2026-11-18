@@ -52,3 +52,4 @@ Two approaches for Phase 2 now, to be decided after reading that code:
 - `PlayerBase` (size 0x250, `FUN_006c7f20`): `PlayerIndex +0x98`, `RaceCarIndex +0xA0`, `IsActive +0x23D`, `Wrecked +0x23E`, `Crashed +0x23F`. Getters for `GetPosition` (`FUN_006d81d0`), `GetTransform` (`FUN_006d8230`), `GetPlayerSpeed` (`FUN_006d7d30`).
 - Script function table in `FUN_00693f90` (handler addresses): `AddAllAIPlayers` 0x687710, `AreAllAIPlayersLoaded` 0x67A710, `RemoveAllRaceCars` 0x675F90, `SetOnlineRaceCarFrozen` 0x68AEA0.
 - `AIPlayer` (size 0x5E0, `FUN_006C6F00`) only exposes SearchWidth/SearchDistance.
+- A player's car is an **int handle** in `PlayerBase+0xA0` (`RaceCarIndex`, -1 = none). Validity `FUN_00573390(h)`, position `FUN_0083be30(&vec4, h)`, speed `FUN_0083ea90(h)`, transform (4x4 float matrix, 64 bytes) via `FUN_006b9ed0`. `LocalPlayer` = `PlayerBase+0x9C == 0`. `AddAllAIPlayers` handler 0x687710 calls `FUN_00686f30`.
