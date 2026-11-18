@@ -51,7 +51,10 @@ static int rd32(uint32_t a, uint32_t *v) { return rd(a, v, 4); }
 #define ADDR_G            0x01177868u /* *G + 0x2F3DC = PlayerManager */
 #define ADDR_VEH_MGR      0x010EDAE4u /* *x + 4 = vehicle data block */
 #define ADDR_VEH_TABLE    0x010EDB68u /* entry pointers */
-#define ADDR_TELEPORT_MGR 0x01177870u /* *x = object whose method FUN_00647E00 queues a teleport */
+/* *0x01177870 is 0 in free roam AND in races (live log), so we use G = *0x01177868 instead:
+ * the other callers do `ECX = <game object> + 0x25690` and FUN_00647E00 itself reads *this + 0x2F3DC as the
+ * PlayerManager, so the object at G+0x25690 should start with G. We check that and log it. */
+#define ADDR_TELEPORT_MGR ADDR_G
 #define ADDR_TELEPORT_FN  0x00647E00u
 #define ADDR_DEFAULT_DIR  0x00FBCB70u /* 4 floats the TeleportVehicle script uses when no direction is given */
 
@@ -88,6 +91,13 @@ static int request_teleport(uint32_t handle, const float pos[4], const char *why
     int r1 = rd32(ADDR_TELEPORT_MGR, &mgr);
     int r2 = rd(ADDR_DEFAULT_DIR, dir, 16);
     if (r1 && mgr) mgr += 0x25690u; /* the game does ADD ECX,0x25690 before calling FUN_00647E00 */
+    {
+        uint32_t first = 0;
+        rd32(mgr, &first);
+        logf_("teleport (%s): mgr object=%08x its first dword=%08x (expect G=%08x)\n", why, mgr,
+              first, mgr - 0x25690u);
+        if (first != mgr - 0x25690u) { logf_("teleport (%s): refused, wrong manager\n", why); return 0; }
+    }
     if (!r1 || mgr == 0x25690u || !mgr || !r2) {
         logf_("teleport (%s): manager not available (read mgr=%d value=%08x, read dir=%d)\n", why, r1, mgr, r2);
         return 0;
