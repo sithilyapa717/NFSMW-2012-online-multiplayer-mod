@@ -18,6 +18,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <stdarg.h>
 #include <stdint.h>
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <windows.h>
@@ -154,15 +155,46 @@ static int find_cars(uint32_t *local_h, uint32_t *ai_h)
     return 1;
 }
 
+/* after a teleport request, look 700 ms later whether the car really is near the requested spot */
+static struct { int active; uint32_t handle; float want[4]; DWORD at; } g_verify;
+
+static void verify_tick(void)
+{
+    if (!g_verify.active || GetTickCount() - g_verify.at < 700) return;
+    g_verify.active = 0;
+    float now[4];
+    if (!car_position(g_verify.handle, now)) { logf_("verify: handle %u has no position any more\n", g_verify.handle); return; }
+    float dx = now[0] - g_verify.want[0], dy = now[1] - g_verify.want[1], dz = now[2] - g_verify.want[2];
+    logf_("verify: handle %u is now (%.1f, %.1f, %.1f), %.1f m from the requested spot\n", g_verify.handle, now[0],
+          now[1], now[2], sqrtf(dx * dx + dy * dy + dz * dz));
+}
+
+/* F9 cycles through the AI cars (type 2) so every one gets tested, not always the first */
 static void key_f9(void)
 {
-    uint32_t lh, ah;
+    static int turn;
+    uint32_t pm = player_manager();
+    uint32_t ai[24], n = 0, lh = (uint32_t)-1;
     float lp[4];
-    find_cars(&lh, &ah);
-    if (lh == (uint32_t)-1 || ah == (uint32_t)-1) { logf_("F9: need a local car and an AI car (start a race or wait for a cop)\n"); return; }
+    if (!pm) { logf_("F9: no PlayerManager\n"); return; }
+    for (int i = 0; i < 24; i++) {
+        uint32_t p = 0, type = 0, h = 0;
+        if (!rd32(pm + 0xA5D0 + i * 4, &p) || !p) continue;
+        rd32(p + 0x9C, &type);
+        rd32(p + 0xA0, &h);
+        if ((int)h == -1) continue;
+        if (type == 0 && lh == (uint32_t)-1) lh = h;
+        if (type == 2) ai[n++] = h;
+    }
+    if (lh == (uint32_t)-1 || n == 0) { logf_("F9: need a local car and an AI car (start a race or wait for a cop)\n"); return; }
     if (!car_position(lh, lp)) { logf_("F9: cannot read local car position\n"); return; }
+    uint32_t target = ai[turn++ % n];
+    logf_("F9: %u AI cars, picking handle %u\n", n, target);
     lp[0] += 12.0f;
-    request_teleport(ah, lp, "F9 AI car beside local");
+    if (request_teleport(target, lp, "F9 AI car beside local")) {
+        g_verify.active = 1; g_verify.handle = target; g_verify.at = GetTickCount();
+        memcpy(g_verify.want, lp, sizeof lp);
+    }
 }
 
 static void key_f10(void)
@@ -186,6 +218,7 @@ static void frame_tick(void)
     if (k9 && !down9) key_f9();
     if (k10 && !down10) key_f10();
     down8 = k8; down9 = k9; down10 = k10;
+    verify_tick();
 }
 
 /* --------------------------------------------------------------- D3D11 proxy */
