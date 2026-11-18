@@ -1,0 +1,236 @@
+/*
+ * coop_logic.c - the swappable part of the NFSMW co-op mod (Phase 2 experiments).
+ *
+ * Loaded by the small stable proxy d3d11.dll (coop_d3d11.c), which calls coop_tick() once per frame.
+ * The proxy loads a COPY of this DLL and reloads it automatically whenever coop_logic.dll in the game
+ * folder is replaced, so you can rebuild and copy it while the game is running (no restart).
+ *
+ * Idea (from the upstream nfs13 project, rewritten here): the game loads d3d11.dll from its own
+ * folder, so a DLL with that name gets loaded into the game. We forward the two D3D11 functions the
+ * game uses to the real system DLL, and patch IDXGISwapChain::Present to get a once-per-frame callback
+ * on the render thread. We do NOT copy the upstream side effects (no registry changes, no frame
+ * limiter, no VSync change, no environment variables).
+ *
+ * Experiment keys (while the game window is running):
+ *   F8   write the player list (type, handle, position) to coop_hook.log
+ *   F9   ask the game to teleport the first AI car (type 2) 12 m beside the local car
+ *   F10  ask the game to teleport the LOCAL car 25 m along +X (tests the same teleport request path)
+ * Everything is logged to coop_hook.log next to this DLL (appended, never truncated).
+ *
+ * Build: see coop/build.ps1 -Target hook
+ */
+#define WIN32_LEAN_AND_MEAN
+#include <stdarg.h>
+#include <stdint.h>
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+#include <windows.h>
+
+/* ---------------------------------------------------------------- logging */
+static char g_logpath[MAX_PATH];
+static void logf_(const char *fmt, ...)
+{
+    FILE *f = fopen(g_logpath, "a");
+    if (!f) return;
+    SYSTEMTIME t;
+    GetLocalTime(&t);
+    fprintf(f, "%02d:%02d:%02d.%03d ", t.wHour, t.wMinute, t.wSecond, t.wMilliseconds);
+    va_list ap;
+    va_start(ap, fmt);
+    vfprintf(f, fmt, ap);
+    va_end(ap);
+    fclose(f);
+}
+
+/* ------------------------------------------------- safe reads of game memory */
+static int rd(uint32_t a, void *out, uint32_t n)
+{
+    SIZE_T got = 0;
+    return ReadProcessMemory(GetCurrentProcess(), (LPCVOID)(uintptr_t)a, out, n, &got) && got == n;
+}
+static int rd32(uint32_t a, uint32_t *v) { return rd(a, v, 4); }
+
+/* ------------------------------------------------------- game structures
+ * (all offsets are documented in coop/docs/GAME_MEMORY.md) */
+#define ADDR_G            0x01177868u /* *G + 0x2F3DC = PlayerManager */
+#define ADDR_VEH_MGR      0x010EDAE4u /* *x + 4 = vehicle data block */
+#define ADDR_VEH_TABLE    0x010EDB68u /* entry pointers */
+/* *0x01177870 is 0 in free roam AND in races (live log), so we use G = *0x01177868 instead:
+ * the other callers do `ECX = <game object> + 0x25690` and FUN_00647E00 itself reads *this + 0x2F3DC as the
+ * PlayerManager, so the object at G+0x25690 should start with G. We check that and log it. */
+#define ADDR_TELEPORT_MGR ADDR_G
+#define ADDR_TELEPORT_FN  0x00647E00u
+#define ADDR_DEFAULT_DIR  0x00FBCB70u /* 4 floats the TeleportVehicle script uses when no direction is given */
+
+static uint32_t player_manager(void)
+{
+    uint32_t g = 0, pm = 0;
+    if (!rd32(ADDR_G, &g) || !g || !rd32(g + 0x2F3DC, &pm)) return 0;
+    return pm;
+}
+
+/* vehicle entry pointer for a car handle, 0 if unknown */
+static uint32_t vehicle_entry(uint32_t handle)
+{
+    uint32_t mgr = 0, data = 0, off = 0, entry = 0;
+    if (!rd32(ADDR_VEH_MGR, &mgr) || !mgr || !rd32(mgr + 4, &data) || !data || !rd32(data + 0x293C, &off)) return 0;
+    short idx = (short)((short)(off & 0xffff) + (short)handle);
+    rd32(ADDR_VEH_TABLE + (uint32_t)(int)idx * 4, &entry);
+    return entry;
+}
+
+static int car_position(uint32_t handle, float pos[4])
+{
+    uint32_t e = vehicle_entry(handle);
+    return e && rd(e + 0x110, pos, 16);
+}
+
+typedef void(__thiscall *teleport_fn)(void *mgr, int handle, float *pos, float *dir, float speed, char flag, int p7,
+                                      unsigned p8, int p9);
+
+static int request_teleport(uint32_t handle, const float pos[4], const char *why)
+{
+    uint32_t mgr = 0;
+    /* the game loads these with MOVAPS (FUN_00647E00 @ 0x647EAA), so they MUST be 16-byte aligned */
+    float dir[4] __attribute__((aligned(16)));
+    int r1 = rd32(ADDR_TELEPORT_MGR, &mgr);
+    int r2 = rd(ADDR_DEFAULT_DIR, dir, 16);
+    if (r1 && mgr) mgr += 0x25690u; /* the game does ADD ECX,0x25690 before calling FUN_00647E00 */
+    {
+        uint32_t first = 0;
+        rd32(mgr, &first);
+        logf_("teleport (%s): mgr object=%08x its first dword=%08x (expect G=%08x)\n", why, mgr,
+              first, mgr - 0x25690u);
+        if (first != mgr - 0x25690u) { logf_("teleport (%s): refused, wrong manager\n", why); return 0; }
+    }
+    if (!r1 || mgr == 0x25690u || !mgr || !r2) {
+        logf_("teleport (%s): manager not available (read mgr=%d value=%08x, read dir=%d)\n", why, r1, mgr, r2);
+        return 0;
+    }
+    float p[4] __attribute__((aligned(16))) = {pos[0], pos[1], pos[2], pos[3]};
+    logf_("teleport (%s): handle=%u to (%.1f, %.1f, %.1f) dir=(%.2f,%.2f,%.2f,%.2f) mgr=%08x\n", why, handle, p[0], p[1],
+          p[2], dir[0], dir[1], dir[2], dir[3], mgr);
+    ((teleport_fn)(uintptr_t)ADDR_TELEPORT_FN)((void *)(uintptr_t)mgr, (int)handle, p, dir, 0.0f, 0, 3, 0, 0);
+    logf_("teleport (%s): request queued\n", why);
+    return 1;
+}
+
+static void dump_players(void)
+{
+    uint32_t pm = player_manager();
+    if (!pm) { logf_("players: no PlayerManager\n"); return; }
+    uint32_t racers = 0, cops = 0, local = 0;
+    rd32(pm + 0xA694, &racers);
+    rd32(pm + 0xA660, &cops);
+    rd32(pm + 0xA6B4, &local);
+    {
+        uint32_t tm = 0, vm = 0;
+        int a = rd32(ADDR_TELEPORT_MGR, &tm), b = rd32(ADDR_VEH_MGR, &vm);
+        logf_("globals: *0x01177870=%08x(ok=%d) *0x010EDAE4=%08x(ok=%d)\n", tm, a, vm, b);
+    }
+    logf_("players: PM=%08x racers=%u cops=%u localIdx=%d\n", pm, racers, cops, (int)local);
+    for (int i = 0; i < 24; i++) {
+        uint32_t p = 0, type = 0, h = 0;
+        if (!rd32(pm + 0xA5D0 + i * 4, &p) || !p) continue;
+        rd32(p + 0x9C, &type);
+        rd32(p + 0xA0, &h);
+        float pos[4] = {0, 0, 0, 0};
+        int ok = (int)h != -1 && car_position(h, pos);
+        logf_("  slot %2d type=%u handle=%d pos=(%.1f, %.1f, %.1f)%s\n", i, type, (int)h, pos[0], pos[1], pos[2],
+              ok ? "" : " (no position)");
+    }
+}
+
+/* first AI car (type 2) and the local car's handle */
+static int find_cars(uint32_t *local_h, uint32_t *ai_h)
+{
+    uint32_t pm = player_manager();
+    *local_h = *ai_h = (uint32_t)-1;
+    if (!pm) return 0;
+    for (int i = 0; i < 24; i++) {
+        uint32_t p = 0, type = 0, h = 0;
+        if (!rd32(pm + 0xA5D0 + i * 4, &p) || !p) continue;
+        rd32(p + 0x9C, &type);
+        rd32(p + 0xA0, &h);
+        if ((int)h == -1) continue;
+        if (type == 0 && *local_h == (uint32_t)-1) *local_h = h;
+        if (type == 2 && *ai_h == (uint32_t)-1) *ai_h = h;
+    }
+    return 1;
+}
+
+/* after a teleport request, look 700 ms later whether the car really is near the requested spot */
+static struct { int active; uint32_t handle; float want[4]; DWORD at; } g_verify;
+
+static void verify_tick(void)
+{
+    if (!g_verify.active || GetTickCount() - g_verify.at < 700) return;
+    g_verify.active = 0;
+    float now[4];
+    if (!car_position(g_verify.handle, now)) { logf_("verify: handle %u has no position any more\n", g_verify.handle); return; }
+    float dx = now[0] - g_verify.want[0], dy = now[1] - g_verify.want[1], dz = now[2] - g_verify.want[2];
+    logf_("verify: handle %u is now (%.1f, %.1f, %.1f), %.1f m from the requested spot\n", g_verify.handle, now[0],
+          now[1], now[2], sqrtf(dx * dx + dy * dy + dz * dz));
+}
+
+/* F9 cycles through the AI cars (type 2) so every one gets tested, not always the first */
+static void key_f9(void)
+{
+    static int turn;
+    uint32_t pm = player_manager();
+    uint32_t ai[24], n = 0, lh = (uint32_t)-1;
+    float lp[4];
+    if (!pm) { logf_("F9: no PlayerManager\n"); return; }
+    for (int i = 0; i < 24; i++) {
+        uint32_t p = 0, type = 0, h = 0;
+        if (!rd32(pm + 0xA5D0 + i * 4, &p) || !p) continue;
+        rd32(p + 0x9C, &type);
+        rd32(p + 0xA0, &h);
+        if ((int)h == -1) continue;
+        if (type == 0 && lh == (uint32_t)-1) lh = h;
+        if (type == 2) ai[n++] = h;
+    }
+    if (lh == (uint32_t)-1 || n == 0) { logf_("F9: need a local car and an AI car (start a race or wait for a cop)\n"); return; }
+    if (!car_position(lh, lp)) { logf_("F9: cannot read local car position\n"); return; }
+    uint32_t target = ai[turn++ % n];
+    logf_("F9: %u AI cars, picking handle %u\n", n, target);
+    lp[0] += 12.0f;
+    if (request_teleport(target, lp, "F9 AI car beside local")) {
+        g_verify.active = 1; g_verify.handle = target; g_verify.at = GetTickCount();
+        memcpy(g_verify.want, lp, sizeof lp);
+    }
+}
+
+static void key_f10(void)
+{
+    uint32_t lh, ah;
+    float lp[4];
+    find_cars(&lh, &ah);
+    if (lh == (uint32_t)-1 || !car_position(lh, lp)) { logf_("F10: no local car\n"); return; }
+    lp[0] += 25.0f;
+    request_teleport(lh, lp, "F10 local car +25 x");
+}
+
+/* ----------------------------------------------------------- per-frame tick */
+__declspec(dllexport) void coop_tick(void)
+{
+    static int down8, down9, down10;
+    int k8 = (GetAsyncKeyState(VK_F8) & 0x8000) != 0;
+    int k9 = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
+    int k10 = (GetAsyncKeyState(VK_F10) & 0x8000) != 0;
+    if (k8 && !down8) dump_players();
+    if (k9 && !down9) key_f9();
+    if (k10 && !down10) key_f10();
+    down8 = k8; down9 = k9; down10 = k10;
+    verify_tick();
+}
+
+
+__declspec(dllexport) void coop_init(const char *logpath)
+{
+    strncpy(g_logpath, logpath, MAX_PATH - 1);
+    g_logpath[MAX_PATH - 1] = 0;
+    logf_("---- coop_logic loaded (build " __DATE__ " " __TIME__ ") ----
+");
+}

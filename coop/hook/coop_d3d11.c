@@ -157,17 +157,32 @@ static int find_cars(uint32_t *local_h, uint32_t *ai_h)
 }
 
 /* after a teleport request, look 700 ms later whether the car really is near the requested spot */
-static struct { int active; uint32_t handle; float want[4]; DWORD at; } g_verify;
+/* up to 16 pending checks, so quick F9 presses are each judged separately */
+#define NVERIFY 16
+static struct { int active; uint32_t handle; float want[4]; float before_to_local; float before[4]; DWORD at; } g_verify[NVERIFY];
+
+static float dist3(const float a[4], const float b[4])
+{
+    float dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+    return sqrtf(dx * dx + dy * dy + dz * dz);
+}
 
 static void verify_tick(void)
 {
-    if (!g_verify.active || GetTickCount() - g_verify.at < 700) return;
-    g_verify.active = 0;
-    float now[4];
-    if (!car_position(g_verify.handle, now)) { logf_("verify: handle %u has no position any more\n", g_verify.handle); return; }
-    float dx = now[0] - g_verify.want[0], dy = now[1] - g_verify.want[1], dz = now[2] - g_verify.want[2];
-    logf_("verify: handle %u is now (%.1f, %.1f, %.1f), %.1f m from the requested spot\n", g_verify.handle, now[0],
-          now[1], now[2], sqrtf(dx * dx + dy * dy + dz * dz));
+    for (int i = 0; i < NVERIFY; i++) {
+        if (!g_verify[i].active || GetTickCount() - g_verify[i].at < 1000) continue;
+        g_verify[i].active = 0;
+        float now[4];
+        if (!car_position(g_verify[i].handle, now)) {
+            logf_("verify: handle %u has no position any more\n", g_verify[i].handle);
+            continue;
+        }
+        float to_spot = dist3(now, g_verify[i].want);
+        float moved = dist3(now, g_verify[i].before);
+        logf_("verify: handle %u was %.0f m from you before; after 1 s it is %.1f m from the requested spot "
+              "(moved %.0f m) => %s\n",
+              g_verify[i].handle, g_verify[i].before_to_local, to_spot, moved, to_spot < 40.0f ? "TELEPORTED" : "NOT teleported");
+    }
 }
 
 /* F9 cycles through the AI cars (type 2) so every one gets tested, not always the first */
@@ -192,9 +207,20 @@ static void key_f9(void)
     uint32_t target = ai[turn++ % n];
     logf_("F9: %u AI cars, picking handle %u\n", n, target);
     lp[0] += 12.0f;
+    float before[4] = {0, 0, 0, 0};
+    car_position(target, before);
+    float dist_before = dist3(before, lp);
     if (request_teleport(target, lp, "F9 AI car beside local")) {
-        g_verify.active = 1; g_verify.handle = target; g_verify.at = GetTickCount();
-        memcpy(g_verify.want, lp, sizeof lp);
+        for (int i = 0; i < NVERIFY; i++) {
+            if (g_verify[i].active) continue;
+            g_verify[i].active = 1;
+            g_verify[i].handle = target;
+            g_verify[i].at = GetTickCount();
+            g_verify[i].before_to_local = dist_before;
+            memcpy(g_verify[i].want, lp, sizeof lp);
+            memcpy(g_verify[i].before, before, sizeof before);
+            break;
+        }
     }
 }
 
