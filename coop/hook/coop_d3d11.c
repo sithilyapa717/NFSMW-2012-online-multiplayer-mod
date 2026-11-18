@@ -85,6 +85,8 @@ static int car_position(uint32_t handle, float pos[4])
 typedef void(__thiscall *teleport_fn)(void *mgr, int handle, float *pos, float *dir, float speed, char flag, int p7,
                                       unsigned p8, int p9);
 
+static int g_quiet; /* 1 = do not log each request (per-frame pin mode) */
+
 static int request_teleport(uint32_t handle, const float pos[4], const char *why)
 {
     uint32_t mgr = 0;
@@ -96,7 +98,7 @@ static int request_teleport(uint32_t handle, const float pos[4], const char *why
     {
         uint32_t first = 0;
         rd32(mgr, &first);
-        logf_("teleport (%s): mgr object=%08x its first dword=%08x (expect G=%08x)\n", why, mgr,
+        if (!g_quiet) logf_("teleport (%s): mgr object=%08x its first dword=%08x (expect G=%08x)\n", why, mgr,
               first, mgr - 0x25690u);
         if (first != mgr - 0x25690u) { logf_("teleport (%s): refused, wrong manager\n", why); return 0; }
     }
@@ -105,10 +107,10 @@ static int request_teleport(uint32_t handle, const float pos[4], const char *why
         return 0;
     }
     float p[4] __attribute__((aligned(16))) = {pos[0], pos[1], pos[2], pos[3]};
-    logf_("teleport (%s): handle=%u to (%.1f, %.1f, %.1f) dir=(%.2f,%.2f,%.2f,%.2f) mgr=%08x\n", why, handle, p[0], p[1],
-          p[2], dir[0], dir[1], dir[2], dir[3], mgr);
+    if (!g_quiet) logf_("teleport (%s): handle=%u to (%.1f, %.1f, %.1f) dir=(%.2f,%.2f,%.2f,%.2f) mgr=%08x\n", why, handle,
+                        p[0], p[1], p[2], dir[0], dir[1], dir[2], dir[3], mgr);
     ((teleport_fn)(uintptr_t)ADDR_TELEPORT_FN)((void *)(uintptr_t)mgr, (int)handle, p, dir, 0.0f, 0, 3, 0, 0);
-    logf_("teleport (%s): request queued\n", why);
+    if (!g_quiet) logf_("teleport (%s): request queued\n", why);
     return 1;
 }
 
@@ -234,10 +236,50 @@ static void key_f10(void)
     request_teleport(lh, lp, "F10 local car +25 x");
 }
 
+/* F11: "pin" test. Every frame, ask the game to put the first AI car 12 m beside the local car.
+ * This is what a puppet car needs: a teleport request EVERY frame. Logs the hit rate once a second. */
+static void pin_tick(int on)
+{
+    static uint32_t frames, ok, tot;
+    static int was_on;
+    if (!on) { was_on = 0; return; }
+    if (!was_on) { was_on = 1; frames = ok = tot = 0; }
+    uint32_t pm = player_manager(), lh = (uint32_t)-1, ah = (uint32_t)-1;
+    if (!pm) return;
+    for (int i = 0; i < 24; i++) {
+        uint32_t p = 0, type = 0, h = 0;
+        if (!rd32(pm + 0xA5D0 + i * 4, &p) || !p) continue;
+        rd32(p + 0x9C, &type);
+        rd32(p + 0xA0, &h);
+        if ((int)h == -1) continue;
+        if (type == 0 && lh == (uint32_t)-1) lh = h;
+        if (type == 2 && ah == (uint32_t)-1) ah = h;
+    }
+    float lp[4] __attribute__((aligned(16))), now[4];
+    if (lh == (uint32_t)-1 || ah == (uint32_t)-1 || !car_position(lh, lp)) return;
+    lp[0] += 12.0f;
+    g_quiet = 1;
+    request_teleport(ah, lp, "pin");
+    g_quiet = 0;
+    frames++;
+    if (car_position(ah, now)) {
+        tot++;
+        if (dist3(now, lp) < 30.0f) ok++;
+    }
+    if (frames % 60 == 0) {
+        logf_("pin: handle %u, last 60 frames: car was within 30 m of the target in %u of %u\n", ah, ok, tot);
+        ok = tot = 0;
+    }
+}
+
 /* ----------------------------------------------------------- per-frame tick */
 static void frame_tick(void)
 {
-    static int down8, down9, down10;
+    static int down8, down9, down10, down11, pin_on;
+    int k11 = (GetAsyncKeyState(VK_F11) & 0x8000) != 0;
+    if (k11 && !down11) { pin_on = !pin_on; logf_("F11: pin %s\n", pin_on ? "on" : "off"); }
+    down11 = k11;
+    pin_tick(pin_on);
     int k8 = (GetAsyncKeyState(VK_F8) & 0x8000) != 0;
     int k9 = (GetAsyncKeyState(VK_F9) & 0x8000) != 0;
     int k10 = (GetAsyncKeyState(VK_F10) & 0x8000) != 0;
