@@ -110,20 +110,16 @@ static int nudge(void)
     rd32(0x01177868, &G); rd32(G + 0x2F3DC, &PM); rd32(PM + 0xA5D0, &p); rd32(p + 0xA0, &h);
     uint32_t veh = vehicle_entry(h, 0, 0, 0);
     float pos[4];
-    if (!veh || !rd(veh + 0x110, pos, 16)) { printf("cannot read car
-"); return 1; }
-    printf("before: (%.2f, %.2f, %.2f)
-", pos[0], pos[1], pos[2]);
+    if (!veh || !rd(veh + 0x110, pos, 16)) { printf("cannot read car\n"); return 1; }
+    printf("before: (%.2f, %.2f, %.2f)\n", pos[0], pos[1], pos[2]);
     pos[0] += 15.0f;
     SIZE_T w = 0;
     if (!WriteProcessMemory(g_h, (LPVOID)(uintptr_t)(veh + 0x110), pos, 16, &w) || w != 16) {
-        printf("write failed (error %lu)
-", GetLastError());
+        printf("write failed (error %lu)\n", GetLastError());
         return 1;
     }
     rd(veh + 0x110, pos, 16);
-    printf("after:  (%.2f, %.2f, %.2f)  (look at the game: did the car jump or snap back?)
-", pos[0], pos[1], pos[2]);
+    printf("after:  (%.2f, %.2f, %.2f)  (look at the game: did the car jump or snap back?)\n", pos[0], pos[1], pos[2]);
     return 0;
 }
 
