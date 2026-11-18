@@ -90,7 +90,7 @@ Goal: working toolchain, understand the existing hook, no game changes.
 
 Exit: `coop/` builds with one command; we know exactly how upstream hooks work; saves backed up.
 
-### Phase 1: Networking core, no game needed  (Status: DONE, except a two-PC test)
+### Phase 1: Networking core, no game needed  (Status: DONE)
 
 Goal: a tested network layer and a fake-car simulator.
 
@@ -115,7 +115,7 @@ Exit: 3 simulator processes (also across two PCs) complete lobby, countdown, rac
 **Phase 1 results (2026-11-17):**
 - `coop/run_tests.ps1`: 253 checks pass, native 64-bit, 32-bit (`x86-windows-gnu`) and with `-fsanitize=undefined`. Covers garbage packets, handshake rejections, reliable delivery under 30% loss, clock sync, two full 4-player races back to back (5% loss, 30 ms + 100 ms jitter, clock skew), guest drop, host drop, leave, rejoin, car relay, spoofing.
 - `coop/run_sim.ps1`: 4 separate processes over real UDP on this PC. Identical results on every peer. Remote-car error: 0.01 m avg on a clean link, 0.08 m avg (max under 1 m) at 8% loss, 40 ms latency, 60 ms jitter.
-- **Not yet done:** the same run across two physical PCs (needs a second machine; do it once the friend side exists). Only loopback was tested for real UDP.
+- **Two-PC test, done 2026-11-18:** host on a desktop, guest on a laptop over the home network (Wi-Fi-like rtt 46-63 ms, clocks 56 s apart). Lobby, synced countdown, race and results all correct; remote-car error 0.016 m avg (host view) and 0.010 m avg (guest view), max 0.41 m. Clean run only; not yet tried with extra loss or latency on top.
 - Limits to keep in mind: no encryption or authentication; reliable channel is for rare messages (about 25/s worked, 80/s at 30% loss overflowed the queue and failed the link, which is by design); the library is not thread-safe (call from one thread).
 
 ### Phase 2: Game recon: find and control one AI car  (Status: TODO)  **make-or-break**
@@ -307,3 +307,4 @@ Each item lists what is hard about it.
 | 2026-11-17 | Plan written. Install verified (Steam, EA-signed, EA-wrapped 13,684,056 bytes). Zig 0.17.1 builds x86. Ghidra and x32dbg not yet found. |
 | 2026-11-17 | Phase 0: read upstream hook, built trace hook with Zig, created `coop/` skeleton and build script. Save folder not found (game never run on this PC). |
 | 2026-11-17 | Phase 1 done: net library (`coop/net/`), 253 automated checks, 4-process real-UDP simulator, `coop/docs/PROTOCOL.md`. Adaptive interpolation delay added. Two-PC test still open. |
+| 2026-11-18 | Phase 1 two-PC test passed (desktop host, laptop guest, real network). Phase 1 closed. Next: Phase 2 (needs Ghidra, x32dbg, game run once, saves backed up). |
