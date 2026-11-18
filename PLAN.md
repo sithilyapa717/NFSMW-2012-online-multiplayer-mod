@@ -81,11 +81,12 @@ Goal: working toolchain, understand the existing hook, no game changes.
 | --- | --- | --- |
 | 0.1 | Verify install is legitimate (Steam manifest, EA signature, installer files) | DONE |
 | 0.2 | Zig compiles 32-bit PE | DONE |
-| 0.3 | Install Ghidra and x32dbg. DONE 2026-11-18: Ghidra 12.2 in `C:\sithil\Apps	ools\ghidra_12.2_PUBLIC` (start with `C:\sithil\Apps	ools\start_ghidra.bat`, which uses the portable Temurin JDK 21 in `C:\sithil\Apps	ools\jdk`; system Java 8 untouched). x32dbg: `%LOCALAPPDATA%\Microsoft\WinGet\Packagesddbg.x64dbg_Microsoft.Winget.Source_8wekyb3d8bbweelease22dbg.exe` (aliases `x32dbg`, `x64dbg`). Downloads verified by SHA-256. | DONE |
+| 0.3 | Install Ghidra and x32dbg. DONE 2026-11-18: Ghidra 12.2 in `C:\sithil\Apps\tools\ghidra_12.2_PUBLIC`, started with `C:\sithil\Apps\tools\start_ghidra.bat`, which uses the portable Temurin JDK 25 in `C:\sithil\Apps\tools\jdk25` (Ghidra 12.2 needs JDK 25+, not 21; system Java 8 untouched). x32dbg: `%LOCALAPPDATA%\Microsoft\WinGet\Packages\x64dbg.x64dbg_Microsoft.Winget.Source_8wekyb3d8bbwe\release\x32\x32dbg.exe` (aliases `x32dbg`, `x64dbg`). Downloads verified by SHA-256. **Ghidra headless currently fails to start (see log).** | DONE (Ghidra not working yet) |
+elease22dbg.exe` (aliases `x32dbg`, `x64dbg`). Downloads verified by SHA-256. | DONE |
 | 0.4 | Read `proxy_d3d11.c` and `hook_engine.h`; documented in `coop/docs/UPSTREAM_HOOK_NOTES.md`. (`patch_nfs13.py` not read yet; only needed for online mode) | DONE |
 | 0.5 | Build the unmodified trace hook with Zig (97,280 bytes, works) | DONE |
 | 0.6 | Create `coop/` skeleton and `coop/build.ps1` (run with `powershell -ExecutionPolicy Bypass -File`; script execution is blocked by default) | DONE (trace target only so far) |
-| 0.7 | Back up the game's save folder; record its location. **Not found: game has likely never been run here (Steam LastPlayed 0). Run it once, then locate saves** | TODO (user) |
+| 0.7 | Back up the game's save folder. DONE 2026-11-18: saves are in the OneDrive-redirected Documents: `C:\Users\sithi\OneDrive\Documents\Criterion Games\Need For Speed(TM) Most Wanted\` (`config.NFS13Save`, `Save\<id>\controls.NFS13Save`, `Save\<id>\MUD.29.NFS13Save`). Backup: `C:\sithil\Backups\NFSMW_saves_20261118_085445`. **Re-back-up before every in-game test; OneDrive may also sync these.** | DONE |
 | 0.8 | Ask sn0wd0wn Matrix chat whether car/AI object addresses are known | TODO (user) |
 
 Exit: `coop/` builds with one command; we know exactly how upstream hooks work; saves backed up.
@@ -125,7 +126,7 @@ Goal: prove we can move an AI car from our DLL. If this fails, the project desig
 | # | Task |
 | --- | --- |
 | 2.1 | Run game with the trace hook only; confirm it loads and logs on this build |
-| 2.2 | (Tool ready: `coop/tools/dump_image.c`, read-only, also checks 6 upstream prologues to prove alignment.) Take a memory dump of the running game (code is OOA-encrypted on disk, so analyse the decrypted image in memory); load into Ghidra with correct base and sections |
+| 2.2 | DONE 2026-11-18 with `coop/tools/dump_image.c` (read-only): 14.5 MB image at 0x400000, decrypted. Take a memory dump of the running game (code is OOA-encrypted on disk, so analyse the decrypted image in memory); load into Ghidra with correct base and sections |
 | 2.3 | Reproduce the upstream hook addresses in the dump to confirm the dump is aligned with `0x00BBF3C0` etc. |
 | 2.4 | Start a single-player race. With Cheat Engine, find the player car's position (floats), speed and rotation; find the pointer chain that stays valid across races |
 | 2.5 | Find the AI vehicle list: how AI cars are created, stored, iterated, and how they are driven (AI controller vs. physics body) |
@@ -310,3 +311,4 @@ Each item lists what is hard about it.
 | 2026-11-18 | Phase 1 two-PC test passed (desktop host, laptop guest, real network). Phase 1 closed. Next: Phase 2 (needs Ghidra, x32dbg, game run once, saves backed up). |
 | 2026-11-18 | Phase 2 prep: `dump_image.exe` built (not yet run: needs the game running). Repo pushed to GitHub. Ghidra/x32dbg still not installed; no save files exist yet (game launched but no profile created). |
 | 2026-11-18 | Installed x64dbg (winget), portable JDK 21 and Ghidra 12.2 (SHA-256 verified). Remaining before Phase 2 recon: game running with a profile, saves backed up. |
+| 2026-11-18 | Phase 2 started. Memory dump taken (game in free roam); all 6 upstream prologues match (task 2.3 done): same build, decrypted, fixed base 0x400000. String scan found script-style names (`SpawnNetworkCar`, `AI racer count`, `GameModeManager`...): see `coop/docs/GAME_MEMORY.md`. Possible shortcut: reuse the game's own network-car spawning instead of hijacking AI cars (unverified). Ghidra headless fails to start (Felix/OSGi error `dataFile is null`; tried cache clears, JDK 21 and 25); GUI not tried. |
