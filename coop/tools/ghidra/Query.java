@@ -11,6 +11,8 @@
 //   cstr ADDR         read a NUL-terminated string
 //   find TEXT         list every string containing TEXT, with who references it
 //   findd TEXT        like find, and also decompile the referencing functions (max 6)
+//   ops TEXT          list instructions whose text contains TEXT (e.g. 'MOVAPS xmmword ptr [' + '+ 0x110],'), with their function
+//   ptr ADDR          find every 4-byte little-endian occurrence of the value ADDR in memory (pointer tables)
 //@category NFSMW
 import java.io.File;
 import java.io.PrintWriter;
@@ -66,6 +68,8 @@ public class Query extends GhidraScript {
                     case "cstr": w.println(cstr(addr(arg))); break;
                     case "find": find(rest, false); break;
                     case "findd": find(rest, true); break;
+                    case "ops": ops(rest); break;
+                    case "ptr": ptr(addr(arg)); break;
                     default: w.println("unknown command " + cmd);
                 }
             } catch (Exception e) {
@@ -159,6 +163,35 @@ public class Query extends GhidraScript {
             sb.append(c >= 32 && c < 127 ? (char) c : '.');
         }
         return a + ": \"" + sb + "\"";
+    }
+
+    private void ops(String text) {
+        int shown = 0;
+        for (Instruction ins : currentProgram.getListing().getInstructions(true)) {
+            if (monitor.isCancelled() || shown >= 150) break;
+            if (ins.toString().contains(text)) {
+                Function f = getFunctionContaining(ins.getAddress());
+                w.println("  " + ins.getAddress() + "  " + ins + (f != null ? "   in " + f.getName() + " @ " + f.getEntryPoint() : ""));
+                shown++;
+            }
+        }
+        if (shown == 0) w.println("   no match");
+    }
+
+    private void ptr(Address target) throws Exception {
+        long v = target.getOffset();
+        byte[] pat = new byte[] {(byte) v, (byte) (v >> 8), (byte) (v >> 16), (byte) (v >> 24)};
+        Address from = currentProgram.getMinAddress();
+        int shown = 0;
+        while (from != null && shown < 40 && !monitor.isCancelled()) {
+            Address hit = mem.findBytes(from, pat, null, true, monitor);
+            if (hit == null) break;
+            Function f = getFunctionContaining(hit);
+            w.println("  " + hit + (f != null ? "  in " + f.getName() : "  (data)"));
+            shown++;
+            from = hit.add(1);
+        }
+        if (shown == 0) w.println("   no match");
     }
 
     private void find(String text, boolean decompile) throws Exception {
