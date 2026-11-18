@@ -125,7 +125,7 @@ Goal: prove we can move an AI car from our DLL. If this fails, the project desig
 | # | Task |
 | --- | --- |
 | 2.1 | Run game with the trace hook only; confirm it loads and logs on this build |
-| 2.2 | Take a memory dump of the running game (code is OOA-encrypted on disk, so analyse the decrypted image in memory); load into Ghidra with correct base and sections |
+| 2.2 | (Tool ready: `coop/tools/dump_image.c`, read-only, also checks 6 upstream prologues to prove alignment.) Take a memory dump of the running game (code is OOA-encrypted on disk, so analyse the decrypted image in memory); load into Ghidra with correct base and sections |
 | 2.3 | Reproduce the upstream hook addresses in the dump to confirm the dump is aligned with `0x00BBF3C0` etc. |
 | 2.4 | Start a single-player race. With Cheat Engine, find the player car's position (floats), speed and rotation; find the pointer chain that stays valid across races |
 | 2.5 | Find the AI vehicle list: how AI cars are created, stored, iterated, and how they are driven (AI controller vs. physics body) |
@@ -308,3 +308,4 @@ Each item lists what is hard about it.
 | 2026-11-17 | Phase 0: read upstream hook, built trace hook with Zig, created `coop/` skeleton and build script. Save folder not found (game never run on this PC). |
 | 2026-11-17 | Phase 1 done: net library (`coop/net/`), 253 automated checks, 4-process real-UDP simulator, `coop/docs/PROTOCOL.md`. Adaptive interpolation delay added. Two-PC test still open. |
 | 2026-11-18 | Phase 1 two-PC test passed (desktop host, laptop guest, real network). Phase 1 closed. Next: Phase 2 (needs Ghidra, x32dbg, game run once, saves backed up). |
+| 2026-11-18 | Phase 2 prep: `dump_image.exe` built (not yet run: needs the game running). Repo pushed to GitHub. Ghidra/x32dbg still not installed; no save files exist yet (game launched but no profile created). |
