@@ -88,7 +88,8 @@ typedef void(__thiscall *teleport_fn)(void *mgr, int handle, float *pos, float *
 static int request_teleport(uint32_t handle, const float pos[4], const char *why)
 {
     uint32_t mgr = 0;
-    float dir[4];
+    /* the game loads these with MOVAPS (FUN_00647E00 @ 0x647EAA), so they MUST be 16-byte aligned */
+    float dir[4] __attribute__((aligned(16)));
     int r1 = rd32(ADDR_TELEPORT_MGR, &mgr);
     int r2 = rd(ADDR_DEFAULT_DIR, dir, 16);
     if (r1 && mgr) mgr += 0x25690u; /* the game does ADD ECX,0x25690 before calling FUN_00647E00 */
@@ -103,7 +104,7 @@ static int request_teleport(uint32_t handle, const float pos[4], const char *why
         logf_("teleport (%s): manager not available (read mgr=%d value=%08x, read dir=%d)\n", why, r1, mgr, r2);
         return 0;
     }
-    float p[4] = {pos[0], pos[1], pos[2], pos[3]};
+    float p[4] __attribute__((aligned(16))) = {pos[0], pos[1], pos[2], pos[3]};
     logf_("teleport (%s): handle=%u to (%.1f, %.1f, %.1f) dir=(%.2f,%.2f,%.2f,%.2f) mgr=%08x\n", why, handle, p[0], p[1],
           p[2], dir[0], dir[1], dir[2], dir[3], mgr);
     ((teleport_fn)(uintptr_t)ADDR_TELEPORT_FN)((void *)(uintptr_t)mgr, (int)handle, p, dir, 0.0f, 0, 3, 0, 0);
