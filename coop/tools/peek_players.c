@@ -13,7 +13,7 @@
  * Chain (from Ghidra; the player part is VERIFIED live, the car part is not):
  *   G  = *(0x01177868);  PM = *(G + 0x2F3DC);  slots: *(PM + 0xA5D0 + i*4), i = 0..23
  *   player type = *(p + 0x9C);  car handle = *(p + 0xA0)
- *   vehicle entry = *(0x010EDB68 + 4 * (short)(*(short*)(*(*(0x010EDB04) + 4) + 0x293C) + handle))
+ *   vehicle entry = *(0x010EDB68 + 4 * (short)(*(short*)(*(*(0x010EDAE4) + 4) + 0x293C) + handle))
  */
 #define WIN32_LEAN_AND_MEAN
 #include <stdint.h>
@@ -35,7 +35,7 @@ static int rd32(uint32_t a, uint32_t *v) { return rd(a, v, 4); }
 static uint32_t vehicle_entry(uint32_t h, uint32_t *mgr_o, uint32_t *data_o, uint32_t *off_o)
 {
     uint32_t mgr = 0, data = 0, off = 0, veh = 0;
-    if (!rd32(0x010EDB04, &mgr) || !mgr || !rd32(mgr + 4, &data) || !data || !rd32(data + 0x293C, &off))
+    if (!rd32(0x010EDAE4, &mgr) || !mgr || !rd32(mgr + 4, &data) || !data || !rd32(data + 0x293C, &off))
         return 0;
     if (mgr_o) *mgr_o = mgr;
     if (data_o) *data_o = data;
