@@ -81,7 +81,7 @@ Goal: working toolchain, understand the existing hook, no game changes.
 | --- | --- | --- |
 | 0.1 | Verify install is legitimate (Steam manifest, EA signature, installer files) | DONE |
 | 0.2 | Zig compiles 32-bit PE | DONE |
-| 0.3 | Install Ghidra and x32dbg; record their paths here | TODO (user) |
+| 0.3 | Install Ghidra and x32dbg. DONE 2026-11-18: Ghidra 12.2 in `C:\sithil\Apps	ools\ghidra_12.2_PUBLIC` (start with `C:\sithil\Apps	ools\start_ghidra.bat`, which uses the portable Temurin JDK 21 in `C:\sithil\Apps	ools\jdk`; system Java 8 untouched). x32dbg: `%LOCALAPPDATA%\Microsoft\WinGet\Packagesddbg.x64dbg_Microsoft.Winget.Source_8wekyb3d8bbweelease22dbg.exe` (aliases `x32dbg`, `x64dbg`). Downloads verified by SHA-256. | DONE |
 | 0.4 | Read `proxy_d3d11.c` and `hook_engine.h`; documented in `coop/docs/UPSTREAM_HOOK_NOTES.md`. (`patch_nfs13.py` not read yet; only needed for online mode) | DONE |
 | 0.5 | Build the unmodified trace hook with Zig (97,280 bytes, works) | DONE |
 | 0.6 | Create `coop/` skeleton and `coop/build.ps1` (run with `powershell -ExecutionPolicy Bypass -File`; script execution is blocked by default) | DONE (trace target only so far) |
@@ -309,3 +309,4 @@ Each item lists what is hard about it.
 | 2026-11-17 | Phase 1 done: net library (`coop/net/`), 253 automated checks, 4-process real-UDP simulator, `coop/docs/PROTOCOL.md`. Adaptive interpolation delay added. Two-PC test still open. |
 | 2026-11-18 | Phase 1 two-PC test passed (desktop host, laptop guest, real network). Phase 1 closed. Next: Phase 2 (needs Ghidra, x32dbg, game run once, saves backed up). |
 | 2026-11-18 | Phase 2 prep: `dump_image.exe` built (not yet run: needs the game running). Repo pushed to GitHub. Ghidra/x32dbg still not installed; no save files exist yet (game launched but no profile created). |
+| 2026-11-18 | Installed x64dbg (winget), portable JDK 21 and Ghidra 12.2 (SHA-256 verified). Remaining before Phase 2 recon: game running with a profile, saves backed up. |
