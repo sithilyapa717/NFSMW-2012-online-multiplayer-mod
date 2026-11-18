@@ -1,4 +1,5 @@
 // Answers questions about the program from a request file, so no clicking around is needed.
+// Runs as a SERVER: start it once in the Script Manager and leave it running.
 //   request:  <user home>\nfs_ghidra_in\request.txt   (one command per line, # = comment)
 //   answer:   <user home>\nfs_ghidra_out\query_out.txt
 //
@@ -35,21 +36,46 @@ public class Query extends GhidraScript {
     private DecompInterface di;
     private Memory mem;
 
+    // Server mode: start this script ONCE; it keeps running and answers every new request.txt.
+    // Stop it by creating nfs_ghidra_in\stop.txt (or cancel it in the Script Manager console).
+    // Answers go to query_out.txt; query_done.txt is written last and holds the request's timestamp.
     @Override
     public void run() throws Exception {
-        File in = new File(new File(System.getProperty("user.home"), "nfs_ghidra_in"), "request.txt");
-        File outDir = new File(System.getProperty("user.home"), "nfs_ghidra_out");
+        File home = new File(System.getProperty("user.home"));
+        File in = new File(new File(home, "nfs_ghidra_in"), "request.txt");
+        File stop = new File(new File(home, "nfs_ghidra_in"), "stop.txt");
+        File outDir = new File(home, "nfs_ghidra_out");
         outDir.mkdirs();
-        w = new PrintWriter(new File(outDir, "query_out.txt"), "UTF-8");
         di = new DecompInterface();
         di.openProgram(currentProgram);
         mem = currentProgram.getMemory();
-        if (!in.exists()) {
-            w.println("no request file at " + in);
-            w.close();
-            return;
+        long served = 0;
+        println("Query server running. Create " + stop + " to stop it.");
+        while (!monitor.isCancelled() && !stop.exists()) {
+            if (in.exists() && in.lastModified() != served) {
+                served = in.lastModified();
+                File tmp = new File(outDir, "query_out.tmp");
+                w = new PrintWriter(tmp, "UTF-8");
+                try {
+                    process(Files.readAllLines(in.toPath()));
+                } catch (Throwable t) {
+                    w.println("server error: " + t);
+                }
+                w.close();
+                File out = new File(outDir, "query_out.txt");
+                out.delete();
+                tmp.renameTo(out);
+                PrintWriter d = new PrintWriter(new File(outDir, "query_done.txt"), "UTF-8");
+                d.println(served);
+                d.close();
+                println("Answered request " + served);
+            }
+            Thread.sleep(500);
         }
-        List<String> lines = Files.readAllLines(in.toPath());
+        println("Query server stopped.");
+    }
+
+    private void process(List<String> lines) {
         for (String raw : lines) {
             String line = raw.trim();
             if (line.isEmpty() || line.startsWith("#")) continue;
@@ -77,8 +103,6 @@ public class Query extends GhidraScript {
             }
             w.flush();
         }
-        w.close();
-        println("Wrote " + new File(outDir, "query_out.txt"));
     }
 
     private Address addr(String s) {
