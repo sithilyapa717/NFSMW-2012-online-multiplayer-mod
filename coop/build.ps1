@@ -22,4 +22,10 @@ if ($Target -in "sim","all") {
     if ($LASTEXITCODE -ne 0) { throw "sim32 build failed" }
     Write-Host "built sim.exe (64-bit) and sim32.exe (32-bit, like the game)"
 }
+if ($Target -in "hook","all") {
+    # Our own proxy d3d11.dll (Phase 2 experiments). Copy build\coop_d3d11.dll to the game folder AS d3d11.dll.
+    zig cc -target x86-windows-gnu -O2 -Wall -Wextra -shared -s "$root\hook\coop_d3d11.c" "$root\hook\d3d11.def" -o "$out\coop_d3d11.dll"
+    if ($LASTEXITCODE -ne 0) { throw "hook build failed" }
+    Write-Host "built $out\coop_d3d11.dll"
+}
 # Tests: run_tests.ps1. Later phases add the coop hook DLL (Phase 2+).
