@@ -44,3 +44,11 @@ Two approaches for Phase 2 now, to be decided after reading that code:
 1. Ghidra: import `nfs13_image_00400000.exe` (a PE rebuilt from the dump so file offset = RVA), run auto-analysis.
 2. Follow the xrefs of `SpawnNetworkCar`, `AI racer count` and `GetPlayerVehicleIndex`.
 3. Cross-check with Cheat Engine / x32dbg in a live single-player race.
+
+## Ghidra findings (2026-11-18)
+
+- **`SpawnNetworkCar` is only a message type**, not a spawn function. Its handler `FUN_0069a7e0` allocates a 0x40-byte message object (vtable `0x00FBD55C`) from a pool. The real spawning is done by whoever receives that message. So the "network-car route" needs the receiver found, and is not a ready-made call.
+- `PlayerManager` (size 0xCC60, registered in `FUN_006d4350`): racer count `+0xA694`, racer pointer array `+0xA664`, local player index `+0xA6B4`, active flags `+0xA5D0`, local `Player` objects stride 0x7F0 from `+0x10`, `AIPlayer` objects stride 0x5E0 from `+0x18D0`.
+- `PlayerBase` (size 0x250, `FUN_006c7f20`): `PlayerIndex +0x98`, `RaceCarIndex +0xA0`, `IsActive +0x23D`, `Wrecked +0x23E`, `Crashed +0x23F`. Getters for `GetPosition` (`FUN_006d81d0`), `GetTransform` (`FUN_006d8230`), `GetPlayerSpeed` (`FUN_006d7d30`).
+- Script function table in `FUN_00693f90` (handler addresses): `AddAllAIPlayers` 0x687710, `AreAllAIPlayersLoaded` 0x67A710, `RemoveAllRaceCars` 0x675F90, `SetOnlineRaceCarFrozen` 0x68AEA0.
+- `AIPlayer` (size 0x5E0, `FUN_006C6F00`) only exposes SearchWidth/SearchDistance.
